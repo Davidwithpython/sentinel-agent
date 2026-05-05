@@ -20,7 +20,10 @@ def main():
     parser.add_argument("--no-file",  help="Disable file collector", action="store_true")
     parser.add_argument("--no-auth",  help="Disable auth collector", action="store_true")
     parser.add_argument("--no-net",   help="Disable network collector", action="store_true")
-    parser.add_argument("--no-proc",  help="Disable process collector", action="store_true")
+    parser.add_argument("--no-proc",      help="Disable process collector",              action="store_true")
+    parser.add_argument("--no-usb",       help="Disable USB/pendrive collector",         action="store_true")
+    parser.add_argument("--usb-only",     help="Enable ONLY the USB/pendrive collector (all others disabled)", action="store_true")
+    parser.add_argument("--no-harddisk",  help="Disable hard disk collector",            action="store_true")
     parser.add_argument("--min-severity", choices=SEVERITY_ORDER, default=None)
     args = parser.parse_args()
 
@@ -44,6 +47,25 @@ def main():
         config["collectors"]["network"]["enabled"] = False
     if args.no_proc:
         config["collectors"]["process"]["enabled"] = False
+
+    # --usb-only: disable every collector except USB
+    if args.usb_only:
+        config["collectors"]["file"]["enabled"]     = False
+        config["collectors"]["auth"]["enabled"]     = False
+        config["collectors"]["network"]["enabled"]  = False
+        config["collectors"]["process"]["enabled"]  = False
+        config["collectors"]["harddisk"]["enabled"] = False
+        config["collectors"]["usb"]["enabled"]      = True
+        logger.info("USB-only mode: all collectors disabled except USB/pendrive")
+
+    # --no-usb: disable USB collector
+    if args.no_usb:
+        config["collectors"]["usb"]["enabled"] = False
+
+    # --no-harddisk: disable hard disk collector
+    if args.no_harddisk:
+        config["collectors"]["harddisk"]["enabled"] = False
+
     if args.min_severity:
         config["filters"]["min_severity"] = args.min_severity
 
