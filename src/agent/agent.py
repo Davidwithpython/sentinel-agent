@@ -9,6 +9,8 @@ from .collectors.file_collector import FileCollector
 from .collectors.auth_collector import create_auth_collector
 from .collectors.network_collector import NetworkCollector
 from .collectors.process_collector import ProcessCollector
+from .collectors.usb_collector import USBCollector
+from .collectors.harddisk_collector import HardDiskCollector
 
 
 logger = Logger.get_logger(__name__)
@@ -129,6 +131,40 @@ class SentinelAgent:
             except Exception as e:
                 logger.error(f"Process collector error: {e}")
 
+
+        # USB / Pendrive collector
+        usb_cfg = col_cfg.get("usb", {})
+        if usb_cfg.get("enabled", True):
+            try:
+                uc = USBCollector(
+                    dispatch                 = dispatch,
+                    poll_interval            = usb_cfg.get("poll_interval", 3.0),
+                    scan_on_connect          = usb_cfg.get("scan_on_connect", True),
+                    transfer_threshold_bytes = usb_cfg.get("transfer_threshold_bytes", 524288000),
+                )
+                uc.start()
+                self._collectors.append(uc)
+                logger.info("USB Collector started")
+            except Exception as e:
+                logger.error(f"USB collector error: {e}")
+
+        # Hard Disk collector
+        hd_cfg = col_cfg.get("harddisk", {})
+        if hd_cfg.get("enabled", True):
+            try:
+                hc = HardDiskCollector(
+                    dispatch         = dispatch,
+                    poll_interval    = hd_cfg.get("poll_interval", 30.0),
+                    smart_interval   = hd_cfg.get("smart_interval", 300.0),
+                    warn_percent     = hd_cfg.get("warn_percent", 85.0),
+                    critical_percent = hd_cfg.get("critical_percent", 95.0),
+                    enable_smart     = hd_cfg.get("enable_smart", True),
+                )
+                hc.start()
+                self._collectors.append(hc)
+                logger.info("HardDisk Collector started")
+            except Exception as e:
+                logger.error(f"HardDisk collector error: {e}")
         self._running = True
         logger.info(f"Agent running. Logs → {self.config['output']['log_dir']}")
         logger.info("Press Ctrl+C to stop.")
