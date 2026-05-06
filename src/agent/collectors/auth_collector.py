@@ -369,7 +369,7 @@ class WindowsAuthCollector:
         except ImportError:
             logger.error("pywin32 not installed. Run: pip install pywin32")
             return
-
+  
         server   = None
         log_type = "Security"
         flags    = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
