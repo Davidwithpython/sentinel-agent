@@ -13,8 +13,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from queue import Queue
-from ..db.db import DBWriter
+# from ..db.db import DBWriter
 from ..logger import Logger
+from .csv_writer import RotatingCSVWriter
+from .raw_writer import RawLogWriter
 import asyncio
 
 logger = Logger.get_logger(__name__)
@@ -122,10 +124,24 @@ class EventDispatcher:
         if category_split:
             for cat in ("file", "authentication", "network", "process", "system"):
                 self._cat_writers[cat] = RotatingJSONLWriter(jsonl_dir, f"sentinel-{cat}")
+         # Dedicated per-collector writers (keyed on event["collector"] field)
+        # This gives us e.g. sentinel-usb.jsonl, sentinel-harddisk.jsonl independently
+        self._collector_writers: dict = {
+            "usb_monitor":      RotatingJSONLWriter(jsonl_dir, "sentinel-usb"),
+            "harddisk_monitor": RotatingJSONLWriter(jsonl_dir, "sentinel-harddisk"),
+        }
+
+        # CSV writer — one flat CSV file for all events
+        self._csv_writer = RotatingCSVWriter(jsonl_dir, "sentinel-raw")
+
+        # Raw log writer — plain human readable text, no formatting
+        self._raw_writer = RawLogWriter(jsonl_dir, "sentinel-raw")
+
+
 
         # The worker thread owns its own event loop AND creates DBWriter inside it
         self._loop: asyncio.AbstractEventLoop = None
-        self._db_writer: DBWriter = None
+        # self._db_writer: DBWriter = None
         self._loop_ready = threading.Event()
 
         self._thread = threading.Thread(
@@ -142,8 +158,9 @@ class EventDispatcher:
 
         # Init DBWriter here so its engine/pool belong to THIS loop
         async def _init():
-            self._db_writer = DBWriter()   # asyncio.run inside __init__ is gone (see db.py fix below)
-            await self._db_writer.init()
+            # self._db_writer = DBWriter()   # asyncio.run inside __init__ is gone (see db.py fix below)
+            # await self._db_writer.init()
+            pass
 
         self._loop.run_until_complete(_init())
         self._loop_ready.set()
@@ -182,16 +199,26 @@ class EventDispatcher:
         if len(self.event_list) >= 30:
             batch = self.event_list[:]      # snapshot
             self.event_list = []            # clear BEFORE await, so failures don't re-queue
-            try:
-                await self._db_writer.write_into_db_batch(batch)
-            except Exception as ex:
-                logger.error(f"Batch DB write failed, dropping {len(batch)} events: {ex}")
-                # optionally: write failed batch to a dead-letter JSONL here
+            # try:
+            #     await self._db_writer.write_into_db_batch(batch)
+            # except Exception as ex:
+                # logger.error(f"Batch DB write failed, dropping {len(batch)} events: {ex}")
+                # # optionally: write failed batch to a dead-letter JSONL here
 
         # Category-split JSONL
         cat = event.get("category", "system")
         if cat in self._cat_writers:
             self._cat_writers[cat].write(event)
+        # Collector-specific JSONL (e.g. sentinel-usb.jsonl, sentinel-harddisk.jsonl) 
+        collector = event.get("collector", "")
+        if collector in self._collector_writers:
+            self._collector_writers[collector].write(event)
+        # CSV raw log
+        self._csv_writer.write(event)
+
+        # Plain raw log
+        self._raw_writer.write(event)
+
 
         # Stdout
         if self._stdout:
@@ -203,3 +230,7 @@ class EventDispatcher:
         self._main_writer.close()
         for w in self._cat_writers.values():
             w.close()
+        for w in self._collector_writers.values():
+            w.close()
+        self._csv_writer.close()
+        self._raw_writer.close() 
